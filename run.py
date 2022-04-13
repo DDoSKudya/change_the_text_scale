@@ -3,20 +3,7 @@
 import os
 import subprocess
 import configparser
-from builtins import object as py_object
-
-
-code_pwsh = """param($scaling)
-$source = @’
-    [DllImport("user32.dll", EntryPoint = "SystemParametersInfo")]
-    public static extern bool SystemParametersInfo(
-                      uint uiAction,
-                      uint uiParam,
-                      uint pvParam,
-                      uint fWinIni);
-‘@
-    $apicall = Add-Type -MemberDefinition $source -Name WinAPICall -Namespace SystemParamInfo –PassThru
-    $apicall::SystemParametersInfo(0x009F, $scaling, $null, 1) | Out-Null"""
+from builtins import object
 
 
 def popen(cmd):
@@ -44,26 +31,10 @@ def collected_data():
     collection["path_ps1"] = config["ps1_setting"]["path"]
     collection["name_ps1"] = config["ps1_setting"]["name"]
 
-    assert collection, print("collection turned out to be empty.")
     return collection
 
 
-class PS1Manager(py_object):
-    @classmethod
-    def create_ps1(cls, ps1, pwsh_code):
-        if os.path.isfile(ps1):
-            return
-        else:
-            PS1Manager.write_code_ps1(ps1, pwsh_code)
-        return
-
-    @classmethod
-    def write_code_ps1(cls, ps1, pwsh_code):
-        with open(ps1, "wb") as file:
-            file.write(pwsh_code)
-
-
-class ScalingManager(py_object):
+class ScalingManager(object):
     @classmethod
     def swap_param(cls, **kwargs):
         last = kwargs.get("last")
@@ -89,12 +60,11 @@ class ScalingManager(py_object):
             return 0
 
 
-class Worker(PS1Manager, ScalingManager):
+class Worker(object):
     """Responsible for the main work of the desktop scaling change process."""
 
-    def __init__(self, pwsh_code):
-        super().__init__()
-        self.pwsh_code = pwsh_code
+    def __init__(self):
+        self.scaling_manager = ScalingManager()
         self.cmd = 'powershell.exe -noexit -ExecutionPolicy Bypass -File "{}" {}'
         self.data = collected_data()
         self.temp = os.path.join(
@@ -107,20 +77,20 @@ class Worker(PS1Manager, ScalingManager):
             self.data.get("name_ps1"))
 
     def handler(self):
-        self.create_ps1(self.ps1, self.pwsh_code)
-        status_scaling = self.read_temp(self.temp)
+        status_scaling = self.scaling_manager.read_temp(self.temp)
         cmd = self.cmd.format(self.ps1, status_scaling)
         popen(cmd)
-        if self.write_temp(
+        if self.scaling_manager.write_temp(
             self.temp,
-            self.swap_param(
+            self.scaling_manager.swap_param(
                 first=self.scaling_first, last=self.scaling_last, status=status_scaling
             ),
         ):
             pass
+
         exit()
 
 
 if __name__ in "__main__":
-    worker = Worker(code_pwsh)
+    worker = Worker()
     worker.handler()
